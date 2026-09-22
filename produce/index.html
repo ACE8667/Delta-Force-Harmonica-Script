@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>音符指引 - 八音阶钢琴块</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">NOTE GUIDE / 8 KEYS</p>
+          <h1>音符指引</h1>
+        </div>
+        <button id="start-button" class="primary-button" type="button">开始演奏</button>
+      </header>
+
+      <section class="dashboard" aria-label="曲目信息">
+        <div class="song-card">
+          <span>当前曲目</span>
+          <strong>八音阶练习曲</strong>
+          <small id="song-status">准备就绪 · 选择开始</small>
+        </div>
+      </section>
+
+      <section class="game-card">
+        <div class="lane-header">
+          <span>音符进入底部接音框后，按下对应琴键</span>
+          <label class="speed-control">
+            <span>BPM 96</span>
+            <select id="playback-rate" aria-label="播放倍率">
+              <option value="0.5">x0.5</option>
+              <option value="0.75">x0.75</option>
+              <option value="1" selected>x1.0</option>
+              <option value="1.5">x1.5</option>
+              <option value="2">x2.0</option>
+            </select>
+          </label>
+        </div>
+        <div id="board" class="board" aria-label="八音阶演奏区域"></div>
+        <div id="keyboard" class="keyboard" aria-label="八音阶键盘"></div>
+      </section>
+
+      <footer class="hint">
+        <span>键盘 <b>Z X C V B N M ,</b> 或点击琴键</span>
+        <span>按 <b>空格</b> 开始 / 暂停</span>
+      </footer>
+    </main> 
+    <script src="app.js"></script>
+  </body>
+</html>

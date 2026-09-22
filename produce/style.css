@@ -1,0 +1,62 @@
+:root {
+  color-scheme: dark;
+  --bg: #10131b;
+  --panel: #191e29;
+  --panel-light: #222938;
+  --text: #f5f7fb;
+  --muted: #9aa4b8;
+  --accent: #8d7aff;
+  --accent-bright: #c7bdff;
+  --danger: #ff718b;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  min-width: 320px;
+  background: radial-gradient(circle at 50% -20%, #2c2751 0, var(--bg) 48%);
+  color: var(--text);
+}
+button { font: inherit; }
+.app-shell { width: min(820px, calc(100% - 40px)); margin: 0 auto; padding: 42px 0 28px; }
+.topbar, .dashboard, .lane-header, .hint { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
+.eyebrow { margin: 0 0 8px; color: var(--accent-bright); font-size: 11px; font-weight: 800; letter-spacing: .2em; }
+h1 { margin: 0; font-size: clamp(28px, 4vw, 44px); letter-spacing: -.04em; }
+.primary-button { border: 0; border-radius: 12px; padding: 13px 22px; color: #fff; background: var(--accent); cursor: pointer; font-weight: 750; box-shadow: 0 8px 24px #8d7aff3b; }
+.primary-button:hover { background: #a095ff; }
+.dashboard { align-items: stretch; margin: 34px 0 22px; }
+.song-card { width: 100%; border: 1px solid #ffffff0b; border-radius: 16px; padding: 16px 18px; background: #ffffff08; }
+.song-card span, .song-card small { display: block; color: var(--muted); font-size: 12px; }
+.song-card strong { display: block; margin: 3px 0 4px; font-size: 16px; }
+.game-card { overflow: hidden; border: 1px solid #ffffff10; border-radius: 22px; padding: 20px; background: #171b25e6; box-shadow: 0 24px 80px #00000035; }
+.lane-header { padding: 0 3px 16px; color: var(--muted); font-size: 13px; }
+.speed-control { display: flex; align-items: center; gap: 10px; }
+.speed-control select { border: 1px solid #ffffff1c; border-radius: 8px; padding: 5px 8px; color: var(--text); background: var(--panel-light); cursor: pointer; }
+.board { position: relative; display: grid; grid-template-columns: repeat(8, 1fr); height: min(58vh, 560px); min-height: 390px; overflow: hidden; border: 1px solid #ffffff0c; border-radius: 14px 14px 5px 5px; background: repeating-linear-gradient(90deg, #11151f 0 6.25%, #ffffff12 6.25% calc(6.25% + 1px), #11151f calc(6.25% + 1px) 12.5%); }
+.lane { position: relative; }
+.lane::after { position: absolute; right: 0; bottom: 0; left: 0; height: 30%; background: linear-gradient(transparent, #8d7aff08); content: ""; }
+.hit-zone { position: absolute; right: 2%; bottom: 18%; left: 2%; z-index: 2; height: 96px; border: 2px solid #c7bdffb8; border-radius: 14px; background: #8d7aff12; box-shadow: inset 0 0 18px #8d7aff1f, 0 0 18px #8d7aff45; pointer-events: none; }
+.hit-zone::before { position: absolute; top: 50%; right: 0; left: 0; border-top: 1px dashed #ffffff70; content: ""; }
+.hit-zone.ready { border-color: #fff; background: #a99fff30; box-shadow: inset 0 0 22px #c7bdff45, 0 0 25px #a99fffaa; }
+.tile { position: absolute; z-index: 3; top: -80px; border: 0; border-radius: 10px; background: linear-gradient(135deg, #a99fff, #6959e9); box-shadow: 0 7px 20px #7565ff65; transition: transform .08s, filter .08s; }
+.tile::after { position: absolute; top: 8px; right: 10px; bottom: 8px; left: 10px; border: 1px solid #ffffff45; border-radius: 6px; content: ""; }
+.tile.ready { background: linear-gradient(135deg, #f5f1ff, #998dff); box-shadow: 0 0 26px #b9aeffcc; }
+.tile.hit { filter: brightness(1.7); transform: scale(.9); }
+.tile.missed { background: var(--danger); }
+.keyboard { display: grid; grid-template-columns: repeat(8, 1fr); gap: 8px; margin-top: 12px; }
+.key { min-height: 65px; border: 1px solid #ffffff12; border-radius: 10px; color: var(--muted); background: var(--panel-light); cursor: pointer; font-size: 13px; font-weight: 700; transition: .08s; }
+.key span { display: block; margin-top: 4px; color: var(--text); font-size: 17px; }
+.key.active, .key:active { color: #fff; background: var(--accent); transform: translateY(2px); }
+.hint { padding: 18px 4px 0; color: var(--muted); font-size: 12px; }
+.hint b { color: var(--accent-bright); }
+@media (max-width: 680px) {
+  .app-shell { width: min(100% - 24px, 820px); padding-top: 26px; }
+  .dashboard { flex-wrap: wrap; gap: 8px; margin-top: 24px; }
+  .song-card { padding: 12px; }
+  .game-card { padding: 12px; }
+  .board { min-height: 360px; height: 56vh; }
+  .key { min-height: 54px; font-size: 10px; }
+  .key span { font-size: 14px; }
+  .hint { display: block; line-height: 2; }
+}
