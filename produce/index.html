@@ -8,6 +8,7 @@
   </head>
   <body>
     <main class="app-shell">
+      <!-- 页面顶部：项目标识、标题与开始/暂停演奏入口。 -->
       <header class="topbar">
         <div>
           <p class="eyebrow">NOTE GUIDE / 8 KEYS</p>
@@ -16,6 +17,7 @@
         <button id="start-button" class="primary-button" type="button">开始演奏</button>
       </header>
 
+      <!-- 曲目信息卡片；song-status 由 app.js 根据播放状态更新。 -->
       <section class="dashboard" aria-label="曲目信息">
         <div class="song-card">
           <span>当前曲目</span>
@@ -24,6 +26,10 @@
         </div>
       </section>
 
+      <!--
+        演奏控制与核心棋盘。
+        app.js 会在 #board 中创建八条音轨、接音框和虚拟键盘。
+      -->
       <section class="game-card">
         <div class="lane-header">
           <span>音符进入底部接音框后，按下对应琴键</span>
@@ -42,11 +48,13 @@
         <div id="board" class="board" aria-label="八音阶演奏区域"></div>
       </section>
 
+      <!-- 键盘映射以及空格开始/暂停的快捷键说明。 -->
       <footer class="hint">
         <span>键盘 <b>Z X C V B N M ,</b> 或点击琴键</span>
         <span>按 <b>空格</b> 开始 / 暂停</span>
       </footer>
-    </main> 
+    </main>
+    <!-- 页面 DOM 构建完成后加载交互逻辑。 -->
     <script src="app.js"></script>
   </body>
 </html>

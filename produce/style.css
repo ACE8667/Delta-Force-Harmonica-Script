@@ -1,5 +1,5 @@
 /* ============================================================
-   主题变量与基础样式
+   1. 主题变量与基础样式
    ============================================================ */
 :root {
   color-scheme: dark;
@@ -11,20 +11,28 @@
   --accent: #8d7aff;
   --accent-bright: #c7bdff;
   --danger: #ff718b;
+  --board-width: 560px;
+  --board-height: 500px;
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
-* { box-sizing: border-box; }
+* {
+  box-sizing: border-box;
+}
+
 body {
   margin: 0;
   min-width: 320px;
   background: radial-gradient(circle at 50% -20%, #2c2751 0, var(--bg) 48%);
   color: var(--text);
 }
-button { font: inherit; }
+
+button {
+  font: inherit;
+}
 
 /* ============================================================
-   页面主体布局
+   2. 页面框架与通用布局
    ============================================================ */
 .app-shell {
   width: min(820px, calc(100% - 40px));
@@ -32,6 +40,7 @@ button { font: inherit; }
   padding: 42px 0 28px;
 }
 
+/* 页眉、信息区、演奏区标题和页脚共享横向分布布局。 */
 .topbar,
 .dashboard,
 .lane-header,
@@ -42,6 +51,9 @@ button { font: inherit; }
   gap: 20px;
 }
 
+/* ============================================================
+   3. 标题、曲目信息与播放控件
+   ============================================================ */
 .eyebrow {
   margin: 0 0 8px;
   color: var(--accent-bright);
@@ -67,7 +79,9 @@ h1 {
   box-shadow: 0 8px 24px #8d7aff3b;
 }
 
-.primary-button:hover { background: #a095ff; }
+.primary-button:hover {
+  background: #a095ff;
+}
 
 .dashboard {
   align-items: stretch;
@@ -95,11 +109,8 @@ h1 {
   font-size: 16px;
 }
 
-/* ============================================================
-   演奏区与控制区
-   ============================================================ */
 .game-card {
-  width: 640px;
+  width: calc(var(--board-width) + 30px);
   max-width: calc(100vw - 24px);
   margin: 0 auto;
   overflow: hidden;
@@ -132,20 +143,26 @@ h1 {
 }
 
 /* ============================================================
-   音轨与接音框
+   4. 八音轨演奏框
    ============================================================ */
+/* 八列网格定义音轨宽度；音块由脚本放入对应轨道并沿轨道中心下落。 */
 .board {
   position: relative;
   z-index: 0;
   display: grid;
   grid-template-columns: repeat(8, 1fr);
-  width: 640px;
+  width: 100%;
   max-width: 100%;
-  height: 480px;
+  height: var(--board-height);
   overflow: hidden;
   border: 2px solid rgba(190, 181, 255, 0.9);
   border-radius: 20px;
-  background: repeating-linear-gradient(90deg, #11151f 0 6.25%, #ffffff12 6.25% calc(6.25% + 1px), #11151f calc(6.25% + 1px) 12.5%);
+  background: repeating-linear-gradient(
+    90deg,
+    #11151f 0 6.25%,
+    #ffffff12 6.25% calc(6.25% + 1px),
+    #11151f calc(6.25% + 1px) 12.5%
+  );
   box-shadow: 0 0 0 1px rgba(190, 181, 255, 0.2), 0 0 18px rgba(141, 122, 255, 0.12);
   isolation: isolate;
 }
@@ -155,6 +172,7 @@ h1 {
   z-index: 1;
 }
 
+/* 轨道底部的微弱渐层用于辅助视觉定位，不改变音块的层级。 */
 .lane::after {
   position: absolute;
   right: 0;
@@ -165,10 +183,11 @@ h1 {
   content: "";
 }
 
+/* 接音框横跨所有轨道；脚本在音块与框相交时激活 ready 状态。 */
 .hit-zone {
   position: absolute;
   right: 0;
-  bottom: 86px;
+  bottom: 0;
   left: 0;
   z-index: 2;
   height: 96px;
@@ -182,6 +201,7 @@ h1 {
   pointer-events: none;
 }
 
+/* 接音框内的虚线提供视觉基准线。 */
 .hit-zone::before {
   position: absolute;
   top: 50%;
@@ -198,8 +218,9 @@ h1 {
 }
 
 /* ============================================================
-   键盘与方块
+   5. 接音框内键盘与音块状态
    ============================================================ */
+/* 虚拟键盘覆盖接音框；pointer-events 仅在键盘本身重新启用。 */
 .hit-zone .keyboard {
   position: absolute;
   inset: 0;
@@ -221,6 +242,7 @@ h1 {
   border-radius: 0;
 }
 
+/* 音块高于轨道装饰层；其就绪外观由脚本按命中框相交状态切换。 */
 .tile {
   position: absolute;
   z-index: 3;
@@ -253,8 +275,13 @@ h1 {
   transform: scale(.9);
 }
 
-.tile.missed { background: var(--danger); }
+.tile.missed {
+  background: var(--danger);
+}
 
+/* ============================================================
+   6. 独立键盘布局与按键反馈
+   ============================================================ */
 .keyboard {
   position: relative;
   z-index: 1;
@@ -291,7 +318,7 @@ h1 {
 }
 
 /* ============================================================
-   提示信息
+   7. 页面底部操作提示
    ============================================================ */
 .hint {
   padding: 18px 4px 0;
@@ -299,26 +326,76 @@ h1 {
   font-size: 12px;
 }
 
-.hint b { color: var(--accent-bright); }
-
-/* ============================================================
-   响应式布局
-   ============================================================ */
-@media (max-width: 680px) {
-  .game-card { width: min(640px, calc(100vw - 24px)); }
-  .board { width: 100%; height: 480px; }
-  .hit-zone .keyboard { gap: 0; padding: 0; }
-  .key { min-height: 54px; font-size: 10px; }
-  .key span { font-size: 15px; }
+.hint b {
+  color: var(--accent-bright);
 }
 
+/* ============================================================
+   8. 窄屏布局调整
+   ============================================================ */
 @media (max-width: 680px) {
-  .app-shell { width: min(100% - 24px, 820px); padding-top: 26px; }
-  .dashboard { flex-wrap: wrap; gap: 8px; margin-top: 24px; }
-  .song-card { padding: 12px; }
-  .game-card { padding: 12px; }
-  .board { min-height: 360px; height: 56vh; }
-  .key { min-height: 54px; font-size: 10px; }
-  .key span { font-size: 14px; }
-  .hint { display: block; line-height: 2; }
+  .game-card {
+    width: min(calc(var(--board-width) + 26px), calc(100vw - 24px));
+  }
+
+  .board {
+    width: 100%;
+    height: min(56vh, var(--board-height));
+    min-height: 320px;
+  }
+
+  .hit-zone .keyboard {
+    gap: 0;
+    padding: 0;
+  }
+
+  .key {
+    min-height: 54px;
+    font-size: 10px;
+  }
+
+  .key span {
+    font-size: 15px;
+  }
+}
+
+/* 页面容器在窄屏下收紧；保留独立断点块以对应页面外层布局。 */
+@media (max-width: 680px) {
+  .app-shell {
+    width: min(100% - 24px, 820px);
+    padding-top: 26px;
+  }
+
+  .dashboard {
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 24px;
+  }
+
+  .song-card {
+    padding: 12px;
+  }
+
+  .game-card {
+    padding: 12px;
+  }
+
+  .board {
+    min-height: 320px;
+    height: min(56vh, var(--board-height));
+  }
+
+  .key {
+    min-height: 54px;
+    font-size: 10px;
+  }
+
+  .key span {
+    font-size: 14px;
+  }
+
+  .hint {
+    display: block;
+    line-height: 2;
+  }
 }
