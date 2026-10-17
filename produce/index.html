@@ -3,58 +3,80 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>音符指引 - 八音阶钢琴块</title>
+    <title>八音阶钢琴块</title>
     <link rel="stylesheet" href="style.css" />
   </head>
   <body>
+    <header class="window-titlebar" aria-label="窗口标题栏">
+      <div class="window-titlebar-drag">
+        <span>音符指引</span>
+      </div>
+      <nav class="window-controls" aria-label="窗口控制">
+        <button id="minimize-window" type="button" aria-label="最小化" title="最小化">—</button>
+        <button id="maximize-window" type="button" aria-label="最大化或还原" title="最大化或还原">□</button>
+        <button id="close-window" class="close-window-button" type="button" aria-label="关闭" title="关闭">×</button>
+      </nav>
+    </header>
     <main class="app-shell">
-      <!-- 页面顶部：项目标识、标题与开始/暂停演奏入口。 -->
-      <header class="topbar">
-        <div>
-          <p class="eyebrow">NOTE GUIDE / 8 KEYS</p>
-          <h1>音符指引</h1>
-        </div>
-        <button id="start-button" class="primary-button" type="button">开始演奏</button>
-      </header>
-
-      <!-- 曲目信息卡片；song-status 由 app.js 根据播放状态更新。 -->
+      <!-- 当前曲目及开始/暂停控制；播放状态由 app.js 更新。 -->
       <section class="dashboard" aria-label="曲目信息">
         <div class="song-card">
           <span>当前曲目</span>
-          <strong>八音阶练习曲</strong>
+          <div class="song-heading">
+            <strong id="current-chart-title">送别</strong>
+            <div class="song-actions">
+              <button id="start-button" class="primary-button" type="button">开始演奏</button>
+              <button id="replay-button" class="secondary-button" type="button" hidden>重新播放</button>
+            </div>
+          </div>
           <small id="song-status">准备就绪 · 选择开始</small>
         </div>
       </section>
 
-      <!--
-        演奏控制与核心棋盘。
-        app.js 会在 #board 中创建八条音轨、接音框和虚拟键盘。
-      -->
+      <!-- 本地曲库仅保存在当前浏览器或桌面程序中；导入/导出使用版本化 JSON 文件。 -->
+      <details class="chart-library">
+        <summary>曲谱管理</summary>
+        <div class="chart-library-content">
+          <label class="chart-library-field">
+            <span>曲谱名称</span>
+            <input id="chart-title-input" type="text" maxlength="100" value="送别" aria-label="曲谱名称" />
+          </label>
+          <label class="chart-library-field">
+            <span>本地曲库</span>
+            <select id="chart-library-select" aria-label="选择本地曲谱"></select>
+          </label>
+          <div class="chart-library-actions">
+            <button id="save-chart-button" class="secondary-button" type="button">保存到本地</button>
+            <button id="import-chart-button" class="secondary-button" type="button">导入 JSON</button>
+            <button id="export-chart-button" class="secondary-button" type="button">导出 JSON</button>
+            <button id="delete-chart-button" class="secondary-button" type="button">删除所选</button>
+            <input id="import-chart-input" type="file" accept=".json,application/json" hidden />
+          </div>
+          <small id="chart-library-status" role="status">曲库加载中…</small>
+        </div>
+      </details>
+
+      <!-- BPM 控件与演奏棋盘；app.js 在 #board 中创建音轨、接音框和琴键。 -->
       <section class="game-card">
         <div class="lane-header">
-          <span>音符进入底部接音框后，按下对应琴键</span>
-          <label class="speed-control">
-            <span>BPM 96</span>
-            <select id="playback-rate" aria-label="播放倍率">
-              <option value="0.5">x0.5</option>
-              <option value="0.75">x0.75</option>
-              <option value="1" selected>x1.0</option>
-              <option value="1.5">x1.5</option>
-              <option value="2">x2.0</option>
-            </select>
-          </label>
+          <span>音块显示移调提示音名；按下对应音轨琴键发声</span>
+          <div class="playback-controls">
+            <label class="tempo-control">
+              <span>BPM</span>
+              <input id="bpm-input" type="number" min="30" max="240" step="1" value="80" aria-label="每分钟节拍数" />
+            </label>
+            <label class="tempo-control">
+              <span>循环</span>
+              <input id="repeat-count-input" type="number" min="1" step="1" value="2" aria-label="曲谱循环次数" />
+            </label>
+          </div>
         </div>
-
         <div id="board" class="board" aria-label="八音阶演奏区域"></div>
       </section>
 
-      <!-- 键盘映射以及空格开始/暂停的快捷键说明。 -->
-      <footer class="hint">
-        <span>键盘 <b>Z X C V B N M ,</b> 或点击琴键</span>
-        <span>按 <b>空格</b> 开始 / 暂停</span>
-      </footer>
     </main>
-    <!-- 页面 DOM 构建完成后加载交互逻辑。 -->
+    <!-- 普通脚本按文档顺序执行，因此先注册默认曲谱，再初始化演奏逻辑。 -->
+    <script src="demo.js"></script>
     <script src="app.js"></script>
   </body>
 </html>
