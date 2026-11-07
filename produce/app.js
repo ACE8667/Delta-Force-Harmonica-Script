@@ -1,26 +1,28 @@
 // ============================================================
 // 1. 音符与演奏配置
 // ============================================================
-// 曲谱事件由 demo.js 提供。note=0 是休止；note=1–8 对应下方 NOTES，duration 以拍数表示。
-// pitch 仅用于音块上的移调提示，不参与按键音高和音轨索引计算。
+// 八个键的基准音名固定为 C4–C5；游戏内左键降八度、右键升八度、中键升半音。
+// 曲谱事件只需要知道轨道和变调状态，目标音名由两者推导。
 const NOTES = [
-  { name: "C4", key: "Z", frequency: 261.63 },
-  { name: "D4", key: "X", frequency: 293.66 },
-  { name: "E4", key: "C", frequency: 329.63 },
-  { name: "F4", key: "V", frequency: 349.23 },
-  { name: "G4", key: "B", frequency: 392.0 },
-  { name: "A4", key: "N", frequency: 440.0 },
-  { name: "B4", key: "M", frequency: 493.88 },
-  { name: "C5", key: ",", frequency: 523.25 },
+  { name: "C4", key: "Z", midi: 60 },
+  { name: "D4", key: "X", midi: 62 },
+  { name: "E4", key: "C", midi: 64 },
+  { name: "F4", key: "V", midi: 65 },
+  { name: "G4", key: "B", midi: 67 },
+  { name: "A4", key: "N", midi: 69 },
+  { name: "B4", key: "M", midi: 71 },
+  { name: "C5", key: ",", midi: 72 },
 ];
 
-const SCALE_SEMITONES = [0, 2, 4, 5, 7, 9, 11, 12];
 const SHARP_NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+const TRANSPOSE_OFFSETS = { down: -12, center: 0, up: 12 };
 
 // 曲谱进度、音块计划位置都以拍数计量；BPM 只负责把毫秒换算为拍数。
 const MIN_BPM = 30;
 const MAX_BPM = 240;
 const DEFAULT_BPM = 80;
+const DEFAULT_LINE_BEATS = 16;
+const LINE_BEATS_STORAGE_KEY = "note-guide-line-beats";
 const CHART_FORMAT = "note-guide-chart";
 const CHART_FORMAT_VERSION = 1;
 const CHART_DATABASE_NAME = "note-guide-library";
@@ -29,6 +31,80 @@ const CHART_STORE_NAME = "charts";
 const MAX_CHART_EVENTS = 10000;
 // 首次开始时将时钟置于负拍数，使第一批音块能从演奏框顶部进入。
 const TRAVEL_BEATS = 12;
+
+function formatNoteName(midiNote) {
+  const pitchClass = ((midiNote % 12) + 12) % 12;
+  const octave = Math.floor(midiNote / 12) - 1;
+  return `${SHARP_NOTE_NAMES[pitchClass]}${octave}`;
+}
+
+function pitchToMidi(pitch) {
+  if (typeof pitch !== "string") return null;
+  const match = /^([A-G])(#?)(-?\d+)$/.exec(pitch);
+  if (!match) return null;
+  const pitchClass = SHARP_NOTE_NAMES.indexOf(`${match[1]}${match[2]}`);
+  if (pitchClass < 0) return null;
+  return (Number(match[3]) + 1) * 12 + pitchClass;
+}
+
+// 现有曲谱只有 pitch；用 pitch 与轨道基准音的差值反推八度变调和半音。
+// 合法差值：0/+1（中音）、+12/+13（升调）、-12/-11（降调）。
+function inferTranspose(step) {
+  const base = NOTES[step.note - 1];
+  const midi = pitchToMidi(step.pitch);
+  if (!base || midi == null) return null;
+
+  const diff = midi - base.midi;
+  const octaveShift = diff >= 12 ? 12 : diff <= -12 ? -12 : 0;
+  const remainder = diff - octaveShift;
+  if (remainder !== 0 && remainder !== 1) return null;
+
+  return {
+    transpose: octaveShift === 12 ? "up" : octaveShift === -12 ? "down" : "center",
+    semitone: remainder === 1,
+  };
+}
+
+// 渲染层统一使用这个结构；以后的曲库数据可以只写 note/transpose/semitone，不写 pitch。
+// transpose 缺省时继承上一块，pitch 缺省时按轨道和变调状态推导。
+function normalizeChartEvent(step, previousTranspose = "center") {
+  if (step.note === 0) {
+    return {
+      note: 0,
+      duration: step.duration,
+      transpose: previousTranspose,
+      semitone: false,
+      pitch: null,
+    };
+  }
+
+  const inferred = inferTranspose(step);
+  const requestedTranspose = step.transpose;
+  const transpose =
+    requestedTranspose === "up" || requestedTranspose === "down" || requestedTranspose === "center"
+      ? requestedTranspose
+      : inferred?.transpose ?? previousTranspose;
+  const semitone = step.semitone ?? inferred?.semitone ?? false;
+  const base = NOTES[step.note - 1];
+  const offset = (TRANSPOSE_OFFSETS[transpose] ?? 0) + (semitone ? 1 : 0);
+
+  return {
+    note: step.note,
+    duration: step.duration,
+    transpose,
+    semitone,
+    pitch: formatNoteName(base.midi + offset),
+  };
+}
+
+function normalizeChart(events) {
+  let previousTranspose = "center";
+  return events.map((step) => {
+    const normalized = normalizeChartEvent(step, previousTranspose);
+    if (normalized.note !== 0) previousTranspose = normalized.transpose;
+    return normalized;
+  });
+}
 
 function validateChartEvents(events) {
   if (!Array.isArray(events) || events.length === 0 || events.length > MAX_CHART_EVENTS) {
@@ -43,16 +119,21 @@ function validateChartEvents(events) {
       step.note < 0 ||
       step.note > NOTES.length ||
       (step.note > 0 && (typeof step.pitch !== "string" || !/^[A-G]#?-?\d+$/.test(step.pitch))) ||
+      (step.transpose != null && !["center", "up", "down"].includes(step.transpose)) ||
+      (step.semitone != null && typeof step.semitone !== "boolean") ||
       !Number.isFinite(step.duration) ||
       step.duration <= 0
     ) {
-      throw new Error(`第 ${index + 1} 条事件格式无效：note 必须为 0–8，非休止符需要有效 pitch，duration 必须为正数。`);
+      throw new Error(`第 ${index + 1} 条事件格式无效：note 必须为 0–8，非休止符需要有效 pitch，transpose 可选 center/up/down，semitone 可选布尔值，duration 必须为正数。`);
     }
   });
 
-  return events.map(({ note, pitch, duration }) =>
-    note === 0 ? { note, duration } : { note, pitch, duration }
-  );
+  return events.map(({ note, pitch, duration, transpose, semitone }) => {
+    const event = note === 0 ? { note, duration } : { note, pitch, duration };
+    if (transpose != null) event.transpose = transpose;
+    if (semitone != null) event.semitone = semitone;
+    return event;
+  });
 }
 
 function validateChartDocument(value) {
@@ -97,6 +178,7 @@ const replayButton = document.querySelector("#replay-button");
 const statusElement = document.querySelector("#song-status");
 const bpmInput = document.querySelector("#bpm-input");
 const repeatCountInput = document.querySelector("#repeat-count-input");
+const lineBeatsInput = document.querySelector("#line-beats-input");
 const currentChartTitle = document.querySelector("#current-chart-title");
 const chartTitleInput = document.querySelector("#chart-title-input");
 const chartLibrarySelect = document.querySelector("#chart-library-select");
@@ -106,6 +188,10 @@ const saveChartButton = document.querySelector("#save-chart-button");
 const importChartButton = document.querySelector("#import-chart-button");
 const exportChartButton = document.querySelector("#export-chart-button");
 const deleteChartButton = document.querySelector("#delete-chart-button");
+const quickPlayButton = document.querySelector("#quick-play");
+const compactToggle = document.querySelector("#compact-toggle");
+const hitZoneToggle = document.querySelector("#hit-zone-toggle");
+const pinToggle = document.querySelector("#pin-toggle");
 const DEFAULT_CHART_TITLE = currentChartTitle.textContent.trim();
 const DEFAULT_CHART = validateChartEvents(window.DEMO_CHART);
 
@@ -119,18 +205,16 @@ let animationFrameId = 0;
 let melodyIndex = 0;
 let nextBeat = 0;
 let songClock = 0;
+let playbackLeadBeats = TRAVEL_BEATS;
 let bpm = DEFAULT_BPM;
+let lineBeats = DEFAULT_LINE_BEATS;
 let repeatCount = Number(repeatCountInput.value);
 let chartTitle = DEFAULT_CHART_TITLE;
 let chart = DEFAULT_CHART.map((step) => ({ ...step }));
+let normalizedChart = normalizeChart(chart);
 let activeChartId = null;
 let savedCharts = [];
-let transposeSemitones = 0;
-// 鼠标按钮用 PointerEvent.button 编号记录；同时按住时各自偏移会叠加。
-const heldTransposeButtons = new Set();
-// 记录当前按住的音符键，以便松开或窗口失焦时清除视觉反馈。
-const heldNoteKeys = new Set();
-let audioContext;
+let lastScheduledTranspose = "center";
 let completed = false;
 // 曲谱总拍数随当前曲目切换动态计算。
 function getChartDurationBeats() {
@@ -146,23 +230,15 @@ function buildLanes() {
     const lane = document.createElement("div");
     lane.className = "lane";
     lane.dataset.index = index;
+    lane.dataset.key = note.key;
     board.appendChild(lane);
 
-    const button = document.createElement("button");
-    button.className = "key";
-    button.type = "button";
-    button.innerHTML = `${note.name}<span>${note.key}</span>`;
-    button.addEventListener("pointerdown", (event) => {
-      // 鼠标在整个棋盘上用于临时移调；虚拟琴键仅响应触屏点按弹奏。
-      if (event.pointerType !== "mouse") {
-        setNoteKeyPressed(index, true);
-        playNote(index);
-      }
-    });
-    button.addEventListener("pointerup", () => setNoteKeyPressed(index, false));
-    button.addEventListener("pointercancel", () => setNoteKeyPressed(index, false));
-    button.addEventListener("lostpointercapture", () => setNoteKeyPressed(index, false));
-    keyboard.appendChild(button);
+    // 琴键只作为图例；软件不发声，实际演奏在游戏内完成。
+    const key = document.createElement("div");
+    key.className = "key";
+    key.setAttribute("aria-label", `${note.name}（${note.key}）`);
+    key.innerHTML = `${note.name}<span>${note.key}</span>`;
+    keyboard.appendChild(key);
   });
 }
 
@@ -170,7 +246,7 @@ function buildHitZone() {
   const hitZone = document.createElement("div");
   hitZone.className = "hit-zone";
   board.appendChild(hitZone);
-  // 接音框负责视觉和命中范围；虚拟键盘覆盖其上并接收触屏输入。
+  // 接音框默认隐藏；显示时只作为视觉参考，琴键是静态图例。
   hitZone.appendChild(keyboard);
   return hitZone;
 }
@@ -183,21 +259,23 @@ const hitZone = buildHitZone();
 // 4. 演奏控制
 // ============================================================
 // 首次开始时初始化时间轴；暂停/继续只切换循环状态，不重置曲谱进度。
-function startGame() {
-  if (running) clearHeldTransposeButtons();
+function setStartLabel(text) {
+  startButton.textContent = text;
+  quickPlayButton.textContent = text;
+}
 
+function startGame() {
   if (!hasStarted || completed) {
     resetPlayback();
   }
 
   running = !running;
-  startButton.textContent = running ? "暂停演奏" : "继续演奏";
-  statusElement.textContent = running ? "演奏中 · 跟随音符落下节奏" : "已暂停 · 准备继续";
+  setStartLabel(running ? "暂停演奏" : "继续演奏");
+  statusElement.textContent = running ? "演奏中 · 跟随音块颜色变调" : "已暂停 · 准备继续";
   repeatCountInput.disabled = running;
   replayButton.hidden = !hasStarted;
 
   if (running) {
-    ensureAudio();
     lastFrame = performance.now();
     animationFrameId = requestAnimationFrame(update);
   } else {
@@ -207,14 +285,19 @@ function startGame() {
 }
 
 function resetPlayback() {
-  clearHeldTransposeButtons();
   cancelAnimationFrame(animationFrameId);
   animationFrameId = 0;
   tiles.forEach((tile) => tile.element.remove());
   tiles = [];
   melodyIndex = 0;
   nextBeat = 0;
-  songClock = -TRAVEL_BEATS;
+  // 按当前棋盘高度和轨道宽度计算入场拍数，保证第一块从棋盘上方进入。
+  const laneWidth = board.children[0]?.clientWidth || 70;
+  const beatDistance = Math.max(1, laneWidth * (2 / 3));
+  const boardHeight = board.clientHeight || 500;
+  playbackLeadBeats = Math.max(TRAVEL_BEATS, Math.ceil(boardHeight / beatDistance) + 2);
+  songClock = -playbackLeadBeats;
+  lastScheduledTranspose = "center";
   hasStarted = true;
   completed = false;
 }
@@ -222,8 +305,8 @@ function resetPlayback() {
 function replayGame() {
   resetPlayback();
   running = true;
-  startButton.textContent = "暂停演奏";
-  statusElement.textContent = "演奏中 · 跟随音符落下节奏";
+  setStartLabel("暂停演奏");
+  statusElement.textContent = "演奏中 · 跟随音块颜色变调";
   repeatCountInput.disabled = true;
   replayButton.hidden = false;
   lastFrame = performance.now();
@@ -239,19 +322,21 @@ function update(timestamp) {
   songClock += (delta * bpm) / 60000;
 
   const playbackDurationBeats = getChartDurationBeats() * repeatCount;
-  const hitZoneTop = hitZone.offsetTop;
-  const hitZoneBottom = hitZoneTop + hitZone.offsetHeight;
-  const hitLine = (hitZoneTop + hitZoneBottom) / 2;
   const boardHeight = board.clientHeight;
+  const hitZoneVisible = !board.classList.contains("board--no-hit-zone");
+  const hitZoneTop = hitZoneVisible ? hitZone.offsetTop : boardHeight;
+  const hitZoneBottom = hitZoneVisible ? hitZoneTop + hitZone.offsetHeight : boardHeight;
+  // 接音框收起时，把棋盘底边当作对齐线，由用户把窗口底边对齐游戏按键框。
+  const hitLine = hitZoneVisible ? (hitZoneTop + hitZoneBottom) / 2 : boardHeight;
   const laneWidths = NOTES.map((_, index) => board.children[index].clientWidth);
 
-  // 按完整入场时长预生成，但不再排入超过本次循环遍数的事件。
-  const lookAheadBeats = TRAVEL_BEATS;
+  // 按当前布局计算出的入场拍数预生成，但不再排入超过本次循环遍数的事件。
+  const lookAheadBeats = playbackLeadBeats;
   while (
     nextBeat <= songClock + lookAheadBeats &&
     nextBeat < playbackDurationBeats
   ) {
-    const step = chart[melodyIndex % chart.length];
+    const step = normalizedChart[melodyIndex % normalizedChart.length];
     createTile(step, nextBeat, hitLine, laneWidths);
     melodyIndex += 1;
     nextBeat += step.duration || 1;
@@ -275,7 +360,7 @@ function update(timestamp) {
   if (songClock >= playbackDurationBeats) {
     running = false;
     completed = true;
-    startButton.textContent = "重新开始";
+    setStartLabel("重新开始");
     statusElement.textContent = `演奏完成 · 已播放 ${repeatCount} 遍`;
     repeatCountInput.disabled = false;
     animationFrameId = 0;
@@ -289,6 +374,7 @@ function update(timestamp) {
 // 5. 音块生成与位置计算
 // ============================================================
 // scheduledBeat 是事件起拍；duration 决定事件结束拍和音块的纵向长度。
+// 颜色/箭头表示当前变调状态；与上一块状态不同时加亮边框和文字。
 function createTile(step, scheduledBeat, hitLine, laneWidths) {
   const isRest = step.note === 0;
   const duration = step.duration || 1;
@@ -298,13 +384,59 @@ function createTile(step, scheduledBeat, hitLine, laneWidths) {
 
   // 曲谱编号从 1 起，数组/DOM 下标从 0 起，因此转换时减一。
   const noteIndex = step.note - 1;
+  const isTransposeChange = step.transpose !== lastScheduledTranspose;
+  lastScheduledTranspose = step.transpose;
+
   const tile = document.createElement("button");
-  tile.className = "tile";
+  tile.className = `tile tile--${step.transpose}`;
   tile.type = "button";
-  tile.setAttribute("aria-label", `移调提示 ${step.pitch}，音轨 ${NOTES[noteIndex].name}`);
+  const transposeLabel =
+    step.transpose === "up" ? "升调" : step.transpose === "down" ? "降调" : "中音";
+  tile.setAttribute(
+    "aria-label",
+    `${transposeLabel}${step.semitone ? "半音" : ""}，目标 ${step.pitch}，音轨 ${step.note}（${NOTES[noteIndex].key}）`
+  );
+
+  if (step.transpose !== "center" || isTransposeChange) {
+    const transposeBadge = document.createElement("span");
+    transposeBadge.className = "tile-transpose";
+
+    const arrow = step.transpose === "up" ? "↑" : step.transpose === "down" ? "↓" : "";
+    if (arrow) {
+      const arrowBadge = document.createElement("span");
+      arrowBadge.className = "tile-arrow";
+      arrowBadge.textContent = arrow;
+      transposeBadge.appendChild(arrowBadge);
+    }
+
+    if (isTransposeChange) {
+      const label = document.createElement("span");
+      label.className = "tile-transpose-label";
+      label.textContent =
+        step.transpose === "up" ? "升调" : step.transpose === "down" ? "降调" : "回中";
+      transposeBadge.appendChild(label);
+    }
+
+    tile.appendChild(transposeBadge);
+  }
+
+  if (step.semitone) tile.classList.add("tile--sharp");
+
+  if (isTransposeChange) tile.classList.add("tile--switch");
+
   const pitchLabel = document.createElement("span");
   pitchLabel.className = "tile-pitch";
-  pitchLabel.textContent = step.pitch;
+  const sharpIndex = step.pitch.indexOf("#");
+  if (sharpIndex >= 0) {
+    pitchLabel.append(step.pitch.slice(0, sharpIndex));
+    const sharpMark = document.createElement("span");
+    sharpMark.className = "tile-pitch-sharp";
+    sharpMark.textContent = "#";
+    pitchLabel.appendChild(sharpMark);
+    pitchLabel.append(step.pitch.slice(sharpIndex + 1));
+  } else {
+    pitchLabel.textContent = step.pitch;
+  }
   tile.appendChild(pitchLabel);
 
   const lane = board.children[noteIndex];
@@ -318,7 +450,7 @@ function createTile(step, scheduledBeat, hitLine, laneWidths) {
   tile.style.left = "0";
   tile.style.top = "0px";
 
-  // 每个 tileData 将可视节点与节拍位置关联，供帧更新、反馈和命中判断共用。
+  // 每个 tileData 将可视节点与节拍位置关联，供帧更新和反馈共用。
   const tileData = {
     element: tile,
     noteIndex,
@@ -327,19 +459,13 @@ function createTile(step, scheduledBeat, hitLine, laneWidths) {
     beatDistance,
     duration,
     scheduledBeat,
+    transpose: step.transpose,
+    semitone: step.semitone,
   };
 
   tileData.y = getTileY(tileData, hitLine);
   tile.style.transform = `translateY(${tileData.y}px)`;
   lane.appendChild(tile);
-
-  tile.addEventListener("pointerdown", (event) => {
-    event.stopPropagation();
-    // 触屏可直接点中已进入接音框的音块；鼠标不以点击音块触发弹奏。
-    if (event.pointerType !== "mouse" && isTileInHitZone(tileData)) {
-      hitTile(tileData);
-    }
-  });
 
   tiles.push(tileData);
 }
@@ -352,16 +478,15 @@ function getTileY(tile, hitLine) {
 }
 
 // ============================================================
-// 6. 命中判定与反馈
+// 6. 接音框反馈
 // ============================================================
-// 音块和接音框处于同一棋盘坐标系，用逻辑坐标判断以避免逐块读取布局矩形。
-function isTileInHitZone(tile) {
-  const hitZoneTop = hitZone.offsetTop;
-  const hitZoneBottom = hitZoneTop + hitZone.offsetHeight;
-  return tile.y + tile.height >= hitZoneTop && tile.y <= hitZoneBottom;
-}
-
+// 接音框默认收起；显示时只作为视觉参考，不做命中移除。
 function updateHitFeedback(tile, hitZoneTop, hitZoneBottom) {
+  if (board.classList.contains("board--no-hit-zone")) {
+    tile.element.classList.remove("ready");
+    return;
+  }
+
   const ready = tile.y + tile.height >= hitZoneTop && tile.y <= hitZoneBottom;
   tile.element.classList.toggle("ready", ready);
 
@@ -370,143 +495,8 @@ function updateHitFeedback(tile, hitZoneTop, hitZoneBottom) {
   }
 }
 
-// 触屏点按音块时的命中处理；普通键盘弹奏只发声，不移除音块。
-function hitTile(tile) {
-  // 活动列表检查可避免同一音块被重复处理。
-  if (!tiles.includes(tile) || !isTileInHitZone(tile)) return;
-
-  tile.element.classList.add("hit");
-  hitZone.classList.remove("ready");
-  tiles = tiles.filter((item) => item !== tile);
-  setTimeout(() => tile.element.remove(), 90);
-}
-
 // ============================================================
-// 7. 音频输出
-// ============================================================
-// 延迟创建音频上下文，以符合浏览器必须由用户手势启动音频的策略。
-function ensureAudio() {
-  if (!audioContext) {
-    audioContext = new AudioContext();
-  }
-
-  if (audioContext.state === "suspended") {
-    audioContext.resume();
-  }
-}
-
-// 根据当前按住的鼠标按钮重算临时移调；松开全部按钮后偏移自然回到 0。
-function updateTransposeFromHeldButtons() {
-  transposeSemitones = 0;
-  heldTransposeButtons.forEach((button) => {
-    if (button === 0) transposeSemitones -= 12;
-    if (button === 2) transposeSemitones += 12;
-    if (button === 1) transposeSemitones += 1;
-  });
-
-  updateKeyboardNoteNames();
-}
-
-function clearHeldTransposeButtons() {
-  if (heldTransposeButtons.size === 0) return;
-
-  heldTransposeButtons.clear();
-  updateTransposeFromHeldButtons();
-}
-
-function updateKeyboardNoteNames() {
-  const scaleNotes = SCALE_SEMITONES.map((semitone) =>
-    formatNoteName(60 + transposeSemitones + semitone)
-  );
-
-  Array.from(keyboard.children).forEach((key, index) => {
-    key.childNodes[0].textContent = scaleNotes[index];
-  });
-}
-
-function transposeButtonFromMouseEvent(event) {
-  if (event.button < 0 || event.button > 2) return;
-
-  event.preventDefault();
-  if (!running) return;
-
-  heldTransposeButtons.add(event.button);
-  updateTransposeFromHeldButtons();
-}
-
-// 鼠标可以在棋盘外松开；window 级监听确保对应按钮偏移及时清除。
-function releaseTransposeButton(event) {
-  if (!heldTransposeButtons.delete(event.button)) return;
-
-  updateTransposeFromHeldButtons();
-}
-
-function isInsideBoard(target) {
-  return target instanceof Element && board.contains(target);
-}
-
-// 仅播放中接收棋盘鼠标按下；三种鼠标键作为移调控制，不用于鼠标弹奏。
-board.addEventListener("mousedown", (event) => {
-  if (running) transposeButtonFromMouseEvent(event);
-});
-
-window.addEventListener("mouseup", releaseTransposeButton);
-window.addEventListener("blur", () => {
-  clearHeldTransposeButtons();
-  heldNoteKeys.forEach((noteIndex) => setNoteKeyPressed(noteIndex, false));
-});
-
-document.addEventListener("contextmenu", (event) => {
-  // 仅在棋盘演奏移调期间拦截右键菜单，不影响页面其他区域。
-  if (running && isInsideBoard(event.target)) event.preventDefault();
-});
-
-document.addEventListener("auxclick", (event) => {
-  if (running && isInsideBoard(event.target)) event.preventDefault();
-});
-
-// MIDI 音高转音名，供按住移调时更新八个可视琴键标签。
-function formatNoteName(midiNote) {
-  const pitchClass = ((midiNote % 12) + 12) % 12;
-  const octave = Math.floor(midiNote / 12) - 1;
-  return `${SHARP_NOTE_NAMES[pitchClass]}${octave}`;
-}
-
-function playNote(noteIndex) {
-  ensureAudio();
-
-  // 每次输入创建短时正弦振荡器；只将鼠标临时移调应用于琴键本身的频率。
-  const oscillator = audioContext.createOscillator();
-  const gain = audioContext.createGain();
-
-  oscillator.type = "sine";
-  oscillator.frequency.value =
-    NOTES[noteIndex].frequency * 2 ** (transposeSemitones / 12);
-
-  gain.gain.setValueAtTime(0.0001, audioContext.currentTime);
-  gain.gain.exponentialRampToValueAtTime(0.22, audioContext.currentTime + 0.015);
-  gain.gain.exponentialRampToValueAtTime(0.0001, audioContext.currentTime + 0.55);
-
-  oscillator.connect(gain).connect(audioContext.destination);
-  oscillator.start();
-  oscillator.stop(audioContext.currentTime + 0.56);
-
-}
-
-function setNoteKeyPressed(noteIndex, pressed) {
-  const key = keyboard.children[noteIndex];
-  if (!key) return;
-
-  key.classList.toggle("pressed", pressed);
-  if (pressed) {
-    heldNoteKeys.add(noteIndex);
-  } else {
-    heldNoteKeys.delete(noteIndex);
-  }
-}
-
-// ============================================================
-// 8. 事件绑定
+// 7. 事件绑定
 // ============================================================
 // BPM 输入限制为 30–240 的整数；更改 BPM 只改变后续时钟推进速率，不重排事件。
 function applyBpm(value) {
@@ -520,6 +510,25 @@ function applyBpm(value) {
 
   bpmInput.setCustomValidity("");
   bpm = nextBpm;
+}
+
+// 导出换行拍数；只影响 TXT 导出排版，不影响演奏。
+function applyLineBeats(value) {
+  const nextLineBeats = Number(value);
+  if (!Number.isInteger(nextLineBeats) || nextLineBeats < 1 || nextLineBeats > 64) {
+    lineBeatsInput.setCustomValidity("换行拍数必须是 1–64 的整数。");
+    lineBeatsInput.reportValidity();
+    lineBeatsInput.value = String(lineBeats);
+    return;
+  }
+
+  lineBeatsInput.setCustomValidity("");
+  lineBeats = nextLineBeats;
+  try {
+    localStorage.setItem(LINE_BEATS_STORAGE_KEY, String(nextLineBeats));
+  } catch (error) {
+    console.warn("无法保存换行拍数：", error);
+  }
 }
 
 // 循环次数是正整数；播放中锁定，暂停后可修改剩余播放目标。
@@ -669,7 +678,7 @@ function stopForChartSwitch() {
   running = false;
   resetPlayback();
   hasStarted = false;
-  startButton.textContent = "开始演奏";
+  setStartLabel("开始演奏");
   repeatCountInput.disabled = false;
   replayButton.hidden = true;
 }
@@ -678,6 +687,7 @@ function activateChart(record) {
   stopForChartSwitch();
   chartTitle = record.title;
   chart = validateChartEvents(record.chart);
+  normalizedChart = normalizeChart(chart);
   bpm = record.bpm;
   bpmInput.value = String(bpm);
   chartTitleInput.value = chartTitle;
@@ -741,12 +751,30 @@ async function saveCurrentChart() {
 async function importChartFile(file) {
   if (!file) return;
   if (file.size > 2 * 1024 * 1024) {
-    chartLibraryStatus.textContent = "导入失败：JSON 文件不能大于 2 MB。";
+    chartLibraryStatus.textContent = "导入失败：曲谱文件不能大于 2 MB。";
     return;
   }
 
   try {
-    const parsedDocument = JSON.parse(await file.text());
+    const text = await file.text();
+    const looksLikeJson =
+      file.name.toLowerCase().endsWith(".json") || text.trimStart().startsWith("{");
+    let parsedDocument;
+
+    if (looksLikeJson) {
+      parsedDocument = JSON.parse(text);
+    } else {
+      if (!window.ChartText) throw new Error("TXT 曲谱解析模块未加载。");
+      const parsed = window.ChartText.parse(text, { fileName: file.name });
+      parsedDocument = {
+        format: CHART_FORMAT,
+        version: CHART_FORMAT_VERSION,
+        title: parsed.title,
+        bpm: parsed.bpm,
+        chart: parsed.chart,
+      };
+    }
+
     const record = createChartRecord(parsedDocument);
     await saveChartRecord(record);
     savedCharts.push(record);
@@ -762,17 +790,24 @@ async function importChartFile(file) {
 
 function exportCurrentChart() {
   try {
+    if (!window.ChartText) throw new Error("TXT 曲谱解析模块未加载。");
+
     const chartDocument = getCurrentChartDocument();
-    const fileContent = `${JSON.stringify(chartDocument, null, 2)}\n`;
+    const fileContent = window.ChartText.serialize({
+      title: chartDocument.title,
+      bpm: chartDocument.bpm,
+      chart: normalizeChart(chartDocument.chart),
+      lineBeats,
+    });
     const objectUrl = URL.createObjectURL(
-      new Blob([fileContent], { type: "application/json" })
+      new Blob([fileContent], { type: "text/plain;charset=utf-8" })
     );
     const downloadLink = document.createElement("a");
     downloadLink.href = objectUrl;
-    downloadLink.download = `${chartDocument.title.replace(/[\\/:*?"<>|]/g, "_")}.note-guide.json`;
+    downloadLink.download = `${chartDocument.title.replace(/[\\/:*?"<>|]/g, "_")}.txt`;
     downloadLink.click();
     window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
-    chartLibraryStatus.textContent = `已导出“${chartDocument.title}”JSON 曲谱文件。`;
+    chartLibraryStatus.textContent = `已导出“${chartDocument.title}”TXT 曲谱文件（每 ${lineBeats} 拍换行）。`;
   } catch (error) {
     chartLibraryStatus.textContent = `导出失败：${error.message}`;
     console.error("导出曲谱失败：", error);
@@ -791,6 +826,7 @@ async function deleteSelectedChart() {
       activeChartId = null;
       chartTitle = DEFAULT_CHART_TITLE;
       chart = DEFAULT_CHART.map((step) => ({ ...step }));
+      normalizedChart = normalizeChart(chart);
       bpm = DEFAULT_BPM;
       bpmInput.value = String(bpm);
       currentChartTitle.textContent = chartTitle;
@@ -806,7 +842,30 @@ async function deleteSelectedChart() {
 }
 
 startButton.addEventListener("click", startGame);
+quickPlayButton.addEventListener("click", startGame);
 replayButton.addEventListener("click", replayGame);
+
+// 图钉：切换窗口是否始终置顶；主进程返回切换后的状态。
+function updatePinButton(pinned) {
+  pinToggle.classList.toggle("active", pinned);
+  pinToggle.setAttribute("aria-pressed", String(pinned));
+  pinToggle.setAttribute("aria-label", pinned ? "取消置顶" : "置顶");
+  pinToggle.title = pinned ? "取消置顶" : "置顶";
+}
+
+updatePinButton(false);
+
+pinToggle.addEventListener("click", async () => {
+  if (!window.windowControls?.togglePin) return;
+
+  try {
+    const pinned = await window.windowControls.togglePin();
+    if (typeof pinned === "boolean") updatePinButton(pinned);
+  } catch (error) {
+    console.error("切换置顶失败：", error);
+  }
+});
+
 document.querySelector("#minimize-window").addEventListener("click", () => {
   window.windowControls?.minimize();
 });
@@ -822,6 +881,9 @@ bpmInput.addEventListener("change", () => {
 repeatCountInput.addEventListener("change", () => {
   applyRepeatCount(repeatCountInput.value);
 });
+lineBeatsInput.addEventListener("change", () => {
+  applyLineBeats(lineBeatsInput.value);
+});
 chartTitleInput.addEventListener("input", () => {
   chartTitle = chartTitleInput.value.trim();
   currentChartTitle.textContent = chartTitle || "未命名曲谱";
@@ -835,32 +897,92 @@ importChartButton.addEventListener("click", () => importChartInput.click());
 importChartInput.addEventListener("change", () => importChartFile(importChartInput.files[0]));
 exportChartButton.addEventListener("click", exportCurrentChart);
 deleteChartButton.addEventListener("click", deleteSelectedChart);
+
+// 接音框默认收起；切换布局时重置播放，避免音块在旧坐标系里跳动。
+function applyHitZoneVisibility(visible) {
+  board.classList.toggle("board--no-hit-zone", !visible);
+  hitZoneToggle.checked = visible;
+}
+
+hitZoneToggle.addEventListener("change", () => {
+  stopForChartSwitch();
+  applyHitZoneVisibility(hitZoneToggle.checked);
+});
+
+// 精简模式：隐藏面板和接音框，棋盘铺满窗口，方便缩放到游戏按键框大小。
+function setCompactMode(enabled) {
+  stopForChartSwitch();
+  document.body.classList.toggle("compact", enabled);
+  compactToggle.textContent = enabled ? "退出精简" : "精简";
+  if (enabled) applyHitZoneVisibility(false);
+}
+
+compactToggle.addEventListener("click", () => {
+  setCompactMode(!document.body.classList.contains("compact"));
+});
+
+// 窗口缩放会改变轨道宽度和音块尺寸；停一下并清空旧音块，下次开始按新尺寸生成。
+let resizeTimer = 0;
+window.addEventListener("resize", () => {
+  window.clearTimeout(resizeTimer);
+  resizeTimer = window.setTimeout(() => {
+    if (running || tiles.length > 0) stopForChartSwitch();
+  }, 150);
+});
+
+// 折叠面板状态保存在本机，下次打开保持。
+const PANEL_STATE_KEY = "note-guide-panels";
+
+function savePanelState() {
+  const state = {};
+  document.querySelectorAll("details[data-panel]").forEach((panel) => {
+    state[panel.id] = panel.open;
+  });
+
+  try {
+    localStorage.setItem(PANEL_STATE_KEY, JSON.stringify(state));
+  } catch (error) {
+    console.warn("无法保存面板状态：", error);
+  }
+}
+
+function restorePanelState() {
+  try {
+    const state = JSON.parse(localStorage.getItem(PANEL_STATE_KEY) || "{}");
+    document.querySelectorAll("details[data-panel]").forEach((panel) => {
+      if (typeof state[panel.id] === "boolean") panel.open = state[panel.id];
+    });
+  } catch (error) {
+    console.warn("无法读取面板状态：", error);
+  }
+}
+
+document.querySelectorAll("details[data-panel]").forEach((panel) => {
+  panel.addEventListener("toggle", savePanelState);
+});
+restorePanelState();
+
+// 恢复上次使用的导出换行拍数。
+try {
+  const savedLineBeats = Number(localStorage.getItem(LINE_BEATS_STORAGE_KEY));
+  if (Number.isInteger(savedLineBeats) && savedLineBeats >= 1 && savedLineBeats <= 64) {
+    lineBeats = savedLineBeats;
+    lineBeatsInput.value = String(savedLineBeats);
+  }
+} catch (error) {
+  console.warn("无法读取换行拍数：", error);
+}
+
+applyHitZoneVisibility(false);
 initializeChartLibrary();
 
-// 空格控制播放；音名快捷键只响应首次 keydown，避免系统按键重复造成连发。
+// 空格在非输入控件上控制开始/暂停；游戏内演奏不依赖软件键盘。
 document.addEventListener("keydown", (event) => {
-  if (event.code === "Space") {
-    event.preventDefault();
-    startGame();
+  if (event.code !== "Space") return;
+  if (event.target instanceof Element && event.target.closest("input, select, textarea, button, summary")) {
     return;
   }
 
-  const noteIndex = NOTES.findIndex(
-    (note) => note.key.toLowerCase() === event.key.toLowerCase()
-  );
-
-  if (noteIndex >= 0 && !event.repeat) {
-    setNoteKeyPressed(noteIndex, true);
-    playNote(noteIndex);
-  }
-});
-
-document.addEventListener("keyup", (event) => {
-  const noteIndex = NOTES.findIndex(
-    (note) => note.key.toLowerCase() === event.key.toLowerCase()
-  );
-
-  if (noteIndex >= 0) {
-    setNoteKeyPressed(noteIndex, false);
-  }
+  event.preventDefault();
+  startGame();
 });

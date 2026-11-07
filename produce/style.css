@@ -22,9 +22,8 @@
   --opacity-text: 100%;
   --opacity-boxes: 100%;
   --opacity-buttons: 100%;
-  /* 桌面棋盘的基准尺寸；窄屏尺寸在文件末尾的媒体查询中覆盖。 */
-  --board-width: 560px;
-  --board-height: 500px;
+  /* 棋盘宽度跟随窗口；高度保留基准值，字号保持不变。 */
+  --board-height: 250px;
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
@@ -41,6 +40,18 @@ body {
   color: color-mix(in srgb, var(--text) var(--opacity-text), transparent);
 }
 
+/* 隐藏文档滚动条（滚轮仍可滚动），避免悬浮窗右侧出现突兀的滑块。 */
+html,
+body {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+html::-webkit-scrollbar,
+body::-webkit-scrollbar {
+  display: none;
+}
+
 /* ============================================================
    2. Electron 自定义标题栏与窗口按钮
    ============================================================ */
@@ -48,10 +59,22 @@ body {
 .window-titlebar {
   display: none;
   align-items: center;
-  height: 38px;
-  color: var(--text);
-  background: var(--panel);
+  height: 30px;
+  border-bottom: 1px solid color-mix(in srgb, rgba(217, 238, 138, 0.16) var(--opacity-frame), transparent);
+  color: color-mix(in srgb, var(--text) var(--opacity-text), transparent);
+  background: color-mix(in srgb, var(--panel) 82%, transparent);
+  backdrop-filter: blur(10px);
+  opacity: 0.92;
+  transition: opacity 0.15s ease, background 0.15s ease;
   user-select: none;
+  font-size: 12px;
+}
+
+/* 不操作时压低存在感，悬停或聚焦时恢复完整标题栏。 */
+.window-titlebar:hover,
+.window-titlebar:focus-within {
+  opacity: 1;
+  background: color-mix(in srgb, var(--panel) 94%, transparent);
 }
 
 /* 标题栏剩余空间作为拖动区域；Electron 通过 app-region 启用拖动。 */
@@ -64,6 +87,50 @@ body {
   -webkit-app-region: drag;
 }
 
+/* 右侧操作区承载快捷播放、精简开关和窗口按钮，不参与拖动。 */
+.titlebar-actions {
+  display: flex;
+  align-items: center;
+  height: 100%;
+  -webkit-app-region: no-drag;
+}
+
+.titlebar-actions > button {
+  height: 100%;
+  border: 0;
+  padding: 0 10px;
+  color: var(--text);
+  background: transparent;
+  cursor: pointer;
+  font-size: 11px;
+}
+
+.titlebar-actions > button:hover {
+  background: #39472d;
+}
+
+/* 精简模式下才显示快捷播放，普通模式仍用曲目卡片上的按钮。 */
+#quick-play {
+  display: none;
+  color: var(--accent-bright);
+  font-weight: 700;
+}
+
+/* 图钉：点击切换“始终置顶”；激活时高亮。 */
+.pin-button {
+  font-size: 14px;
+  line-height: 1;
+}
+
+.pin-button.active {
+  color: var(--accent-bright);
+  background: color-mix(in srgb, rgba(166, 200, 75, 0.18) var(--opacity-buttons), transparent);
+}
+
+.pin-button:not(.active) {
+  opacity: 0.55;
+}
+
 /* 右侧窗口操作按钮容器不能被标题栏拖动手势覆盖。 */
 .window-controls {
   display: flex;
@@ -73,14 +140,14 @@ body {
 
 /* 最小化、最大化/还原、关闭按钮共享尺寸与默认配色。 */
 .window-controls button {
-  width: 46px;
+  width: 40px;
   border: 0;
   border-radius: 0;
   padding: 0;
   color: var(--text);
-  background: var(--panel);
+  background: transparent;
   cursor: pointer;
-  font-size: 17px;
+  font-size: 15px;
 }
 
 /* 普通窗口按钮的悬停反馈。 */
@@ -288,11 +355,93 @@ button {
 }
 
 /* ============================================================
+   5.1 播放设置、图例等可折叠面板
+   ============================================================ */
+.settings-panel,
+.legend-panel {
+  width: 100%;
+  margin: 0 0 10px;
+  border: 1px solid color-mix(in srgb, rgba(217, 238, 138, 0.2) var(--opacity-frame), transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--panel) var(--opacity-boxes), transparent);
+}
+
+.settings-panel summary,
+.legend-panel summary {
+  padding: 8px 12px;
+  color: color-mix(in srgb, var(--accent-bright) var(--opacity-text), transparent);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+  user-select: none;
+}
+
+/* 设置区内的说明和 BPM/循环控件沿用原有布局，收紧内边距。 */
+.settings-panel .lane-header {
+  padding: 0 12px 10px;
+}
+
+/* 接音框/琴键开关；默认关闭，使用游戏内按键框。 */
+.toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px 10px;
+  color: color-mix(in srgb, var(--muted) var(--opacity-text), transparent);
+  font-size: 11px;
+}
+
+/* 音块颜色图例，颜色与 .tile--up/.tile--down 保持一致。 */
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  padding: 0 12px 12px;
+  color: color-mix(in srgb, var(--muted) var(--opacity-text), transparent);
+  font-size: 11px;
+}
+
+.legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.legend-swatch {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  font-size: 9px;
+  font-style: normal;
+  font-weight: 900;
+}
+
+.legend-swatch--center {
+  background: #86a936;
+}
+
+.legend-swatch--up {
+  background: #e08a2e;
+}
+
+.legend-swatch--down {
+  background: #3d8fd1;
+}
+
+.legend-swatch--sharp {
+  color: #111;
+  background: #fff;
+}
+
+/* ============================================================
    6. 棋盘外框、节奏输入和顶部说明
    ============================================================ */
-/* 包住节奏输入和演奏框；尺寸跟随基准棋盘宽度，超窄屏防止横向溢出。 */
+/* 包住节奏输入和演奏框；宽度跟随窗口，避免两侧留白。 */
 .game-card {
-  width: calc(var(--board-width) + 30px);
+  width: 100%;
   max-width: calc(100vw - 24px);
   margin: 0 auto;
   overflow: hidden;
@@ -317,9 +466,10 @@ button {
   gap: 10px;
 }
 
-/* BPM 与循环控件整体并排；窄屏下占满整行并靠右对齐。 */
+/* BPM、循环与换行控件整体并排；窄屏下允许换行。 */
 .playback-controls {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 14px;
 }
@@ -378,6 +528,27 @@ button {
   height: 30%;
   background: linear-gradient(transparent, color-mix(in srgb, #a6c84b12 var(--opacity-boxes), transparent));
   content: "";
+}
+
+/* 收起接音框后，棋盘底边就是对齐线，接音框整体隐藏。 */
+.board--no-hit-zone .hit-zone {
+  display: none;
+}
+
+/* 轨道顶部保留键位字母；接音框和琴键收起后仍能对位游戏按键。 */
+.lane::before {
+  position: absolute;
+  top: 3px;
+  right: 0;
+  left: 0;
+  z-index: 0;
+  color: color-mix(in srgb, var(--muted) var(--opacity-text), transparent);
+  content: attr(data-key);
+  font-size: 9px;
+  line-height: 1;
+  opacity: 0.55;
+  text-align: center;
+  pointer-events: none;
 }
 
 /*
@@ -473,19 +644,80 @@ button {
   right: 0;
   bottom: 2px;
   left: 0;
+  font-size: 12px;
+  font-weight: 800;
   line-height: 1;
+  text-align: center;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
   pointer-events: none;
 }
 
-/* 音块进入接音框时仅改变颜色，不改尺寸或位置，避免破坏相邻块对齐。 */
-.tile.ready {
-  background: color-mix(in srgb, #c0dd68 var(--opacity-boxes), transparent);
+/* 半音 # 与音名其余字符同样式，不再单独做白底徽标。 */
+.tile-pitch-sharp {
+  display: inline;
+  margin: 0;
+  padding: 0;
+  color: inherit;
+  background: transparent;
+  font: inherit;
+  line-height: 1;
+  vertical-align: baseline;
+  text-shadow: inherit;
 }
 
-/* 触屏点中可命中音块后的短暂亮度和缩放反馈。 */
-.tile.hit {
-  filter: brightness(1.7);
-  transform: scale(.9);
+/* 三种变调状态的颜色；中音沿用主题绿，升调橙、降调蓝。 */
+.tile--center {
+  background: color-mix(in srgb, #86a936 var(--opacity-boxes), transparent);
+}
+
+.tile--up {
+  background: color-mix(in srgb, #e08a2e var(--opacity-boxes), transparent);
+}
+
+.tile--down {
+  background: color-mix(in srgb, #3d8fd1 var(--opacity-boxes), transparent);
+}
+
+/* 变调切换的那一块加亮边框，避免只靠颜色判断。 */
+.tile--switch {
+  outline: 2px solid color-mix(in srgb, #ffffff var(--opacity-text), transparent);
+  outline-offset: -2px;
+}
+
+/* 顶部变调标签：大箭头 + “升调/降调/回中”，箭头单独放大。 */
+.tile-transpose {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 1px 5px 2px;
+  border-bottom-right-radius: 6px;
+  background: rgba(0, 0, 0, 0.45);
+  font-size: 11px;
+  line-height: 1.1;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.tile-arrow {
+  font-size: 17px;
+  font-weight: 900;
+  line-height: 0.9;
+  text-shadow: 0 1px 2px #000;
+}
+
+.tile-transpose-label {
+  font-size: 11px;
+  font-weight: 800;
+}
+
+/* 音块进入接音框时只提亮和描边，不改底色，避免覆盖变调颜色。 */
+.tile.ready {
+  filter: brightness(1.18);
+  outline: 2px solid color-mix(in srgb, #ffffff var(--opacity-text), transparent);
+  outline-offset: -2px;
 }
 
 /* missed 状态供脚本标记错过的音块，使用危险色提示。 */
@@ -513,7 +745,7 @@ button {
   border-radius: 12px;
   color: color-mix(in srgb, var(--muted) var(--opacity-text), transparent);
   background: color-mix(in srgb, rgba(217, 238, 138, 0.06) var(--opacity-buttons), transparent);
-  cursor: pointer;
+  cursor: default;
   font-size: 13px;
   font-weight: 700;
   transition: .08s;
@@ -609,16 +841,16 @@ button {
     gap: 12px;
   }
 
-  /* 棋盘卡片宽度适配视口，并略微缩小内部留白。 */
+  /* 棋盘卡片宽度跟随窗口，只略微缩小内部留白。 */
   .game-card {
-    width: min(calc(var(--board-width) + 26px), calc(100vw - 24px));
+    width: 100%;
     padding: 12px;
   }
 
   /* 棋盘高度随视口调整，同时保留最小练习区域高度。 */
   .board {
     width: 100%;
-    min-height: 320px;
+    min-height: 160px;
     height: min(56vh, var(--board-height));
   }
 
@@ -639,4 +871,102 @@ button {
     font-size: 14px;
   }
 
+}
+
+/* ============================================================
+   11. 精简/对齐模式
+   ============================================================ */
+/*
+ * 隐藏面板和接音框，让棋盘铺满窗口；窗口本身可自由缩放，
+ * 用户把窗口底边和左右边界对齐游戏按键框即可。
+ */
+body.compact .app-shell {
+  width: 100%;
+  height: calc(100vh - 30px);
+  padding: 0;
+}
+
+/* 精简模式标题栏默认完全融入背景，只留右侧悬浮按钮；悬停时再出现。 */
+body.compact .window-titlebar {
+  border-bottom-color: transparent;
+  background: transparent;
+  backdrop-filter: none;
+  opacity: 0.8;
+}
+
+body.compact .window-titlebar-drag span {
+  visibility: hidden;
+}
+
+body.compact .titlebar-actions > button,
+body.compact .window-controls button {
+  text-shadow: 0 1px 3px #000;
+}
+
+body.compact .window-titlebar:hover,
+body.compact .window-titlebar:focus-within {
+  border-bottom-color: color-mix(in srgb, rgba(217, 238, 138, 0.16) var(--opacity-frame), transparent);
+  background: color-mix(in srgb, var(--panel) 82%, transparent);
+  opacity: 1;
+}
+
+body.compact .window-titlebar:hover .window-titlebar-drag span {
+  visibility: visible;
+}
+
+body.compact .dashboard,
+body.compact .chart-library,
+body.compact .settings-panel,
+body.compact .legend-panel {
+  display: none;
+}
+
+body.compact .game-card {
+  width: 100%;
+  max-width: none;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+body.compact .board {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  border: 0;
+  border-left: 2px solid color-mix(in srgb, #d9ee8a var(--opacity-frame), transparent);
+  border-right: 2px solid color-mix(in srgb, #d9ee8a var(--opacity-frame), transparent);
+  border-bottom: 2px solid color-mix(in srgb, #d9ee8a var(--opacity-frame), transparent);
+  border-radius: 0;
+  box-shadow: none;
+}
+
+body.compact #quick-play {
+  display: inline-flex;
+  align-items: center;
+}
+
+/* 极窄窗口（缩到约一半）时收紧标题栏，避免图钉/精简/窗口按钮溢出。 */
+@media (max-width: 380px) {
+  .window-titlebar-drag span {
+    display: none;
+  }
+
+  .titlebar-actions > button {
+    padding: 0 6px;
+    font-size: 10px;
+  }
+
+  .window-controls button {
+    width: 32px;
+    font-size: 13px;
+  }
+
+  .pin-button {
+    font-size: 12px;
+  }
 }

@@ -11,11 +11,16 @@
       <div class="window-titlebar-drag">
         <span>音符指引</span>
       </div>
-      <nav class="window-controls" aria-label="窗口控制">
-        <button id="minimize-window" type="button" aria-label="最小化" title="最小化">—</button>
-        <button id="maximize-window" type="button" aria-label="最大化或还原" title="最大化或还原">□</button>
-        <button id="close-window" class="close-window-button" type="button" aria-label="关闭" title="关闭">×</button>
-      </nav>
+      <div class="titlebar-actions">
+        <button id="pin-toggle" class="pin-button" type="button" aria-label="置顶" aria-pressed="false" title="置顶">📌</button>
+        <button id="quick-play" type="button">开始演奏</button>
+        <button id="compact-toggle" type="button">精简</button>
+        <nav class="window-controls" aria-label="窗口控制">
+          <button id="minimize-window" type="button" aria-label="最小化" title="最小化">—</button>
+          <button id="maximize-window" type="button" aria-label="最大化或还原" title="最大化或还原">□</button>
+          <button id="close-window" class="close-window-button" type="button" aria-label="关闭" title="关闭">×</button>
+        </nav>
+      </div>
     </header>
     <main class="app-shell">
       <!-- 当前曲目及开始/暂停控制；播放状态由 app.js 更新。 -->
@@ -33,8 +38,8 @@
         </div>
       </section>
 
-      <!-- 本地曲库仅保存在当前浏览器或桌面程序中；导入/导出使用版本化 JSON 文件。 -->
-      <details class="chart-library">
+      <!-- 本地曲库仅保存在当前浏览器或桌面程序中；导入/导出使用 TXT 曲谱文件。 -->
+      <details class="chart-library" id="library-panel" data-panel>
         <summary>曲谱管理</summary>
         <div class="chart-library-content">
           <label class="chart-library-field">
@@ -47,36 +52,59 @@
           </label>
           <div class="chart-library-actions">
             <button id="save-chart-button" class="secondary-button" type="button">保存到本地</button>
-            <button id="import-chart-button" class="secondary-button" type="button">导入 JSON</button>
-            <button id="export-chart-button" class="secondary-button" type="button">导出 JSON</button>
+            <button id="import-chart-button" class="secondary-button" type="button">导入曲谱</button>
+            <button id="export-chart-button" class="secondary-button" type="button">导出曲谱</button>
             <button id="delete-chart-button" class="secondary-button" type="button">删除所选</button>
-            <input id="import-chart-input" type="file" accept=".json,application/json" hidden />
+            <input id="import-chart-input" type="file" accept=".txt,.json,text/plain,application/json" hidden />
           </div>
           <small id="chart-library-status" role="status">曲库加载中…</small>
         </div>
       </details>
 
-      <!-- BPM 控件与演奏棋盘；app.js 在 #board 中创建音轨、接音框和琴键。 -->
+      <!-- 演奏棋盘；接音框与琴键默认收起，游戏内自带按键框作为对齐目标。 -->
       <section class="game-card">
-        <div class="lane-header">
-          <span>音块显示移调提示音名；按下对应音轨琴键发声</span>
-          <div class="playback-controls">
-            <label class="tempo-control">
-              <span>BPM</span>
-              <input id="bpm-input" type="number" min="30" max="240" step="1" value="80" aria-label="每分钟节拍数" />
-            </label>
-            <label class="tempo-control">
-              <span>循环</span>
-              <input id="repeat-count-input" type="number" min="1" step="1" value="2" aria-label="曲谱循环次数" />
-            </label>
+        <details class="settings-panel" id="settings-panel" data-panel open>
+          <summary>播放设置</summary>
+          <div class="lane-header">
+            <span>音块颜色表示变调状态；把窗口底边对齐游戏按键框</span>
+            <div class="playback-controls">
+              <label class="tempo-control">
+                <span>BPM</span>
+                <input id="bpm-input" type="number" min="30" max="240" step="1" value="80" aria-label="每分钟节拍数" />
+              </label>
+              <label class="tempo-control">
+                <span>循环</span>
+                <input id="repeat-count-input" type="number" min="1" step="1" value="2" aria-label="曲谱循环次数" />
+              </label>
+              <label class="tempo-control">
+                <span>换行</span>
+                <input id="line-beats-input" type="number" min="1" max="64" step="1" value="16" aria-label="导出换行拍数" />
+              </label>
+            </div>
           </div>
-        </div>
-        <div id="board" class="board" aria-label="八音阶演奏区域"></div>
+          <label class="toggle-row">
+            <input id="hit-zone-toggle" type="checkbox" />
+            <span>显示接音框与琴键（默认收起，使用游戏内按键框对齐）</span>
+          </label>
+        </details>
+
+        <details class="legend-panel" id="legend-panel" data-panel>
+          <summary>音块图例</summary>
+          <div class="legend">
+            <span class="legend-item"><i class="legend-swatch legend-swatch--center"></i>中音（不变调）</span>
+            <span class="legend-item"><i class="legend-swatch legend-swatch--up"></i>升调（右键 ↑）</span>
+            <span class="legend-item"><i class="legend-swatch legend-swatch--down"></i>降调（左键 ↓）</span>
+            <span class="legend-item"><i class="legend-swatch legend-swatch--sharp">#</i>半音（中键）</span>
+          </div>
+        </details>
+
+        <div id="board" class="board board--no-hit-zone" aria-label="八音阶演奏区域"></div>
       </section>
 
     </main>
-    <!-- 普通脚本按文档顺序执行，因此先注册默认曲谱，再初始化演奏逻辑。 -->
+    <!-- 普通脚本按文档顺序执行：默认曲谱 → TXT 编解码 → 演奏逻辑。 -->
     <script src="demo.js"></script>
+    <script src="chart-text.js"></script>
     <script src="app.js"></script>
   </body>
 </html>
